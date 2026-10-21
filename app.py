@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hmac
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -19,6 +20,38 @@ MAX_PRICE = 30_000
 LOW_PRICE_CEILING = 10_000
 
 st.set_page_config(page_title="수급 흔적 레이더", page_icon="🔎", layout="wide")
+
+
+def require_app_password() -> None:
+    """Require the owner-configured password before rendering app content."""
+    try:
+        expected_password = str(st.secrets.get("APP_PASSWORD", ""))
+    except Exception:
+        expected_password = ""
+
+    if not expected_password:
+        st.title("🔒 수급 흔적 레이더")
+        st.error("앱 비밀번호가 아직 설정되지 않았습니다. Streamlit 앱 설정 → Secrets에 APP_PASSWORD를 등록해 주세요.")
+        st.code('APP_PASSWORD = "원하는_비밀번호"', language="toml")
+        st.stop()
+
+    if st.session_state.get("app_authenticated"):
+        return
+
+    st.title("🔒 수급 흔적 레이더 로그인")
+    st.caption("앱 비밀번호를 입력하면 계속할 수 있습니다.")
+    with st.form("app_password_login"):
+        entered_password = st.text_input("앱 비밀번호", type="password")
+        submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
+    if submitted:
+        if hmac.compare_digest(entered_password, expected_password):
+            st.session_state["app_authenticated"] = True
+            st.rerun()
+        st.error("비밀번호가 맞지 않습니다.")
+    st.stop()
+
+
+require_app_password()
 
 
 def load_watchlist() -> dict[str, str]:
@@ -233,6 +266,9 @@ st.title("🔎 수급 흔적 레이더")
 st.caption("거래량·거래대금·주가 흐름에서 이상 징후 후보를 찾습니다. 실제 매수 주체나 매집 여부를 확정하는 기능은 아닙니다.")
 
 with st.sidebar:
+    if st.button("로그아웃", use_container_width=True):
+        st.session_state.pop("app_authenticated", None)
+        st.rerun()
     st.header("검색 조건")
     source = st.radio("데이터 입력", ["시장 자동 조회", "CSV/XLSX 업로드"], help="자동 조회는 한국거래소 KRX Open API의 승인된 인증키를 사용합니다.")
     lookback = st.slider("차트·검색 기간(거래일)", 30, 90, 60, 5)
